@@ -28,13 +28,10 @@ public:
 
 			for (int i = 0; i < mainMatrixHeight; i++) {
 				matrixPointer[i] = new T**[mainMatrixWidth];
-
 				for (int j = 0; j < mainMatrixWidth; j++) {
 					matrixPointer[i][j] = new T*[cellMatrixHeight];
-
 					for (int k = 0; k < cellMatrixHeight; k++) {
 						matrixPointer[i][j][k] = new T[cellMatrixWidth];
-
 						for (int m = 0; m < cellMatrixWidth; m++) {
 							matrixPointer[i][j][k][m] = 0;
 						}
@@ -51,13 +48,9 @@ public:
 
 	bool equals(Matrix<T> &matrix) {
 		for (int i = 0; i < mainMatrixHeight; i++) {
-
 			for (int j = 0; j < mainMatrixWidth; j++) {
-
 				for (int k = 0; k < cellMatrixHeight; k++) {
-
 					for (int l = 0; l < cellMatrixWidth; l++) {
-
 						if (this->matrixPointer[i][j][k][l] != matrix.getMatrixPointer()[i][j][k][l]) {
 							return false;
 						}
@@ -103,27 +96,23 @@ public:
 		}
 	}
 
-	Matrix<T> multiplyNotVectorized(Matrix<T> &matrix) {
-		if (this->mainMatrixHeight != matrix.getMainMatrixWidth()
-			|| this->cellMatrixHeight != matrix.getCellMatrixWidth())
+	Matrix<T> multiplyNotVectorized(Matrix<T> &matrixB) {
+		if (this->mainMatrixHeight != matrixB.getMainMatrixWidth()
+			|| this->cellMatrixHeight != matrixB.getCellMatrixWidth())
 		{
-			return matrix;
+			return matrixB;
 		}
 
-		Matrix<T> matrixC(this->mainMatrixWidth, matrix.getMainMatrixHeight(), this->cellMatrixWidth, matrix.getCellMatrixHeight());
-		T* __restrict temp— = nullptr;
-		T* __restrict tempB = nullptr;
-		T** __restrict tempD = nullptr;
+		Matrix<T> resultMatrix(this->mainMatrixWidth, matrixB.getMainMatrixHeight(), this->cellMatrixWidth, matrixB.getCellMatrixHeight());
 
-		for (int m = 0; m < matrix.getMainMatrixHeight(); m++) {
+		for (int m = 0; m < matrixB.getMainMatrixHeight(); m++) {
 			for (int n = 0; n < this->mainMatrixWidth; n++) {
-				//tempD = matrixC.getMatrixPointer()[m][n];
 				for (int y = 0; y < this->mainMatrixWidth; y++) {
-					mulMatrixNotVectorized(matrix, matrixC, m, n, y);
+					mulMatrixNotVectorized(matrixB, resultMatrix, m, n, y);
 				}
 			}
 		}
-		return matrixC;
+		return resultMatrix;
 	}
 
 	void mulMatrixNotVectorized(Matrix<T> &matrixB, Matrix<T> &resultMatrix, int m, int n, int y)
