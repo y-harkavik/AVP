@@ -143,6 +143,7 @@
  &lt;/minValueThresholds&gt;
 &lt;/bag&gt;
 </utilizationThreshold>
+   <loopAttributionMode>loopAndFunction</loopAttributionMode>
   </knobs>
  </engine>
  <contextValues type="bag"/>
