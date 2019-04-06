@@ -8,11 +8,14 @@
 #include <time.h>
 #include <intrin.h>
 #include <ctime>
+#include <cmath>
 
 #pragma comment(lib, "cudart") 
-#define SIZE_M 1024
-#define SIZE_N 600000
-#define COUNT_OF_THREADS SIZE_M
+
+#define SIZE_M 123488
+#define SIZE_N 1234
+#define COUNT_OF_THREADS 1024
+#define MAX_BLOCKS 200000
 
 using namespace std;
 
@@ -20,7 +23,6 @@ void cpu_matrixOperation(short*, short*, int, int);
 void cuda_matrixOperation(short*, short*, bool);
 void cuda_checkStatus(cudaError_t);
 void fillMatrix(short*, int, int);
-int getCountOfBlocks(int, int, int);
 bool checkEquality(short*, short*, int, int);
 
 int main() {
@@ -31,19 +33,21 @@ int main() {
 
 	fillMatrix(initMatrix, SIZE_M, SIZE_N);
 
-	/*for (auto i = 0; i < sizeOfN * sizeOfM; i++) {
-		cout << inMatrix[i] << " ";
-		if ((i + 1) % sizeOfM == 0) {
+	/*for (auto i = 0; i < SIZE_N * SIZE_M; i++) {
+		printf("%2d ", initMatrix[i]);
+
+		if ((i + 1) % SIZE_M == 0) {
 			cout << endl;
 		}
 	}*/
 
-	cuda_matrixOperation(initMatrix, cuda_outMatrixSharedMemory, true);
 	cuda_matrixOperation(initMatrix, cuda_outMatrix, false);
+	cuda_matrixOperation(initMatrix, cuda_outMatrixSharedMemory, true);
+
 	cpu_matrixOperation(initMatrix, cpu_outMatrix, SIZE_M, SIZE_N);
 
-	if (checkEquality(cuda_outMatrix, cuda_outMatrixSharedMemory, SIZE_M, SIZE_N)
-		&& checkEquality(cpu_outMatrix, cuda_outMatrixSharedMemory, SIZE_M, SIZE_N)) {
+	if (checkEquality(cuda_outMatrix, cpu_outMatrix, SIZE_M, SIZE_N)
+		&& checkEquality(cuda_outMatrixSharedMemory, cuda_outMatrix, SIZE_M, SIZE_N)) {
 		cout << "Results are equals!" << endl;
 	}
 	else {
@@ -51,23 +55,23 @@ int main() {
 	}
 
 	/*cout << endl << "Not optimize" << endl;
-	for (auto i = 0; i < sizeOfN * sizeOfM; i++) {
-		cout << cuda_outMatrix[i] << " ";
-		if ((i + 1) % (sizeOfM * 2) == 0) {
+	for (auto i = 0; i < SIZE_N * SIZE_M; i++) {
+		printf("%3d ", cuda_outMatrix[i]);
+		if ((i + 1) % (SIZE_M * 2) == 0) {
 			cout << endl;
 		}
 	}
 	cout << endl << "Shared memory" << endl;
-	for (auto i = 0; i < sizeOfN * sizeOfM; i++) {
-		cout << cuda_outMatrixOptimization[i] << " ";
-		if ((i + 1) % (sizeOfM * 2) == 0) {
+	for (auto i = 0; i < SIZE_N * SIZE_M; i++) {
+		printf("%3d ", cuda_outMatrixSharedMemory[i]);
+		if ((i + 1) % (SIZE_M * 2) == 0) {
 			cout << endl;
 		}
 	}
 	cout << endl << "CPU" << endl;
-	for (auto i = 0; i < sizeOfN * sizeOfM; i++) {
-		cout << cpu_outMatrix[i] << " ";
-		if ((i + 1) % (sizeOfM * 2) == 0) {
+	for (auto i = 0; i < SIZE_N * SIZE_M; i++) {
+		printf("%3d ", cpu_outMatrix[i]);
+		if ((i + 1) % (SIZE_M * 2) == 0) {
 			cout << endl;
 		}
 	}*/
@@ -78,108 +82,141 @@ int main() {
 	free(cuda_outMatrixSharedMemory);
 }
 
-__global__ void cuda_matrixOperationKernel(short* inMatrix, short* outMatrix) {
-	int column = blockIdx.x * COUNT_OF_THREADS + threadIdx.x;
+__global__ void cuda_matrixOperationKernel(int* inMatrix, short* outMatrix, int numOfBlocksInRow) {
+	int remainderElements = SIZE_M % COUNT_OF_THREADS;
 
-	int elements = ((int*)inMatrix)[column];
+	if (remainderElements != 0 && (blockIdx.x + 1) % numOfBlocksInRow == 0 && threadIdx.x >= remainderElements) {
+		return;
+	}
+
+	int *startOfResultRow = &inMatrix[SIZE_M * (blockIdx.x / numOfBlocksInRow)];
+	outMatrix = &outMatrix[SIZE_M * (blockIdx.x / numOfBlocksInRow) * 2];
+
+	int elements = 0;
+	int countOfThreads = 0;
+
+	if (remainderElements != 0 && (blockIdx.x + 1) % numOfBlocksInRow == 0) {
+		countOfThreads = remainderElements;
+	}
+	else {
+		countOfThreads = COUNT_OF_THREADS;
+	}
+
+	if (threadIdx.x < (countOfThreads / 2)) {
+		elements = startOfResultRow[(blockIdx.x % numOfBlocksInRow) * COUNT_OF_THREADS / 2 + threadIdx.x];
+	}
+	else {
+		elements = startOfResultRow[threadIdx.x % (countOfThreads / 2) + SIZE_M / 2 + (blockIdx.x % numOfBlocksInRow) * COUNT_OF_THREADS / 2];
+	}
+
 	short firstElement = (short)elements;
 	short secondElement = (short)(elements >> 16);
 
-	if (threadIdx.x < (COUNT_OF_THREADS / 2)) {
-		outMatrix[threadIdx.x * 2 * 2 + blockIdx.x * COUNT_OF_THREADS * 2] = firstElement;
-		outMatrix[(threadIdx.x * 2 + 1) * 2 + blockIdx.x * COUNT_OF_THREADS * 2] = secondElement;
+	int offset = COUNT_OF_THREADS * 2 * (blockIdx.x % numOfBlocksInRow);
+
+	if (threadIdx.x < (countOfThreads / 2)) {
+		outMatrix[threadIdx.x * 2 * 2 + offset] = firstElement;
+		outMatrix[(threadIdx.x * 2 + 1) * 2 + offset] = secondElement;
 	}
 	else {
-		outMatrix[(threadIdx.x - COUNT_OF_THREADS / 2) * 2 * 2 + 1 + blockIdx.x * COUNT_OF_THREADS * 2] = firstElement;
-		outMatrix[((threadIdx.x - COUNT_OF_THREADS / 2) * 2 + 1) * 2 + 1 + blockIdx.x * COUNT_OF_THREADS * 2] = secondElement;
+		outMatrix[(threadIdx.x - countOfThreads / 2) * 2 * 2 + 1 + offset] = firstElement;
+		outMatrix[((threadIdx.x - countOfThreads / 2) * 2 + 1) * 2 + 1 + offset] = secondElement;
 	}
 }
 
-__global__ void cuda_matrixOptimizationOperationKernel(short* inMatrix, short* outMatrix) {
-	int column = blockIdx.x * COUNT_OF_THREADS + threadIdx.x;
+__global__ void cuda_matrixSharedMemoryOperationKernel(int* inMatrix, int* outMatrix, int numOfBlocksInRow) {
+	int remainderElements = SIZE_M % COUNT_OF_THREADS;
 
 	__shared__ int sharedMemory[COUNT_OF_THREADS];
 	__shared__ short sharedMemoryOut[COUNT_OF_THREADS * 2];
 
-	sharedMemory[threadIdx.x] = ((int*)inMatrix)[column];
+	if (remainderElements != 0 && (blockIdx.x + 1) % numOfBlocksInRow == 0 && threadIdx.x >= remainderElements) {
+		return;
+	}
 
-	int buffer = sharedMemory[threadIdx.x];
-	short firstElement = (short)buffer;
-	short secondElement = (short)(buffer >> 16);
+	int *startOfResultRow = &inMatrix[SIZE_M * (blockIdx.x / numOfBlocksInRow)];
+	outMatrix = &outMatrix[SIZE_M * (blockIdx.x / numOfBlocksInRow)];
 
-	if (threadIdx.x < (COUNT_OF_THREADS / 2)) {
+	int countOfThreads = 0;
+
+	if (remainderElements != 0 && (blockIdx.x + 1) % numOfBlocksInRow == 0) {
+		countOfThreads = remainderElements;
+	}
+	else {
+		countOfThreads = COUNT_OF_THREADS;
+	}
+
+	if (threadIdx.x < (countOfThreads / 2)) {
+		sharedMemory[threadIdx.x] = startOfResultRow[(blockIdx.x % numOfBlocksInRow) * COUNT_OF_THREADS / 2 + threadIdx.x];
+	}
+	else {
+		sharedMemory[threadIdx.x] = startOfResultRow[threadIdx.x % (countOfThreads / 2) + SIZE_M / 2 + (blockIdx.x % numOfBlocksInRow) * COUNT_OF_THREADS / 2];
+	}
+
+	int elements = sharedMemory[threadIdx.x];
+	short firstElement = (short)elements;
+	short secondElement = (short)(elements >> 16);
+
+	int offset = COUNT_OF_THREADS * 2 * (blockIdx.x % numOfBlocksInRow);
+
+	if (threadIdx.x < (countOfThreads / 2)) {
 		sharedMemoryOut[threadIdx.x * 2 * 2] = firstElement;
 		sharedMemoryOut[(threadIdx.x * 2 + 1) * 2] = secondElement;
 	}
 	else {
-		sharedMemoryOut[(threadIdx.x - COUNT_OF_THREADS / 2) * 2 * 2 + 1] = firstElement;
-		sharedMemoryOut[((threadIdx.x - COUNT_OF_THREADS / 2) * 2 + 1) * 2 + 1] = secondElement;
+		sharedMemoryOut[(threadIdx.x - countOfThreads / 2) * 2 * 2 + 1] = firstElement;
+		sharedMemoryOut[((threadIdx.x - countOfThreads / 2) * 2 + 1) * 2 + 1] = secondElement;
 	}
+
 	__syncthreads();
 
-	((int*)outMatrix)[threadIdx.x + blockIdx.x * COUNT_OF_THREADS] = ((int*)sharedMemoryOut)[threadIdx.x];
+	outMatrix[offset / 2 + threadIdx.x] = ((int*)sharedMemoryOut)[threadIdx.x];
 }
 
 void cuda_matrixOperation(short* inMatrix, short* outMatrix, bool optimizationFlag) {
-	cudaEvent_t cuda_startTime;
-	cudaEvent_t cuda_endTime;
 	float resultTime;
-	cuda_checkStatus(cudaEventCreate(&cuda_startTime));
-	cuda_checkStatus(cudaEventCreate(&cuda_endTime));
 
 	short* device_inMatrix;
 	short* device_outMatrix;
-	
-	for (int i = 0, int times = 1; i < SIZE_N; i += 400000, times++) {
-		//for (int j = 0; j < SIZE_M; j += 1024) {
-		//	int sizeM, sizeN;
 
-		//	sizeM = (SIZE_M - j) < 1024 ? SIZE_M - j : 1024;
-		//	sizeN = (SIZE_N - i) < 400000 ? SIZE_N - i : 400000;
+	cudaEvent_t cuda_startTime;
+	cudaEvent_t cuda_endTime;
 
-		//	/*if (SIZE_M - j < 1024) {
-		//		sizeM = SIZE_M - j;
-		//	}
-		//	else {
-		//		sizeM = 1024;
-		//	}*/
-		//	/*if (SIZE_N - i < 400000) {
-		//		sizeN = sizeN - i;
-		//	}
-		//	else {
-		//		sizeN = 400000;
-		//	}*/
-		//	cuda_checkStatus(cudaMalloc(&device_inMatrix, sizeM * sizeN * sizeof(short)));
-		//	cuda_checkStatus(cudaMalloc(&device_outMatrix, sizeM * sizeN * sizeof(short)));
-		//	cuda_checkStatus(cudaMemcpy(device_inMatrix, inMatrix[], sizeM * sizeN * sizeof(short), cudaMemcpyHostToDevice));
-		//}
-		int sizeN;
-		sizeN = (SIZE_N - i) < 400000 ? SIZE_N - i : 400000;
-		short b = inMatrix[i * 1024];
-		short* a = &inMatrix[i * 1024];
-		cuda_checkStatus(cudaMalloc(&device_inMatrix, SIZE_M * sizeN * sizeof(short)));
-		cuda_checkStatus(cudaMalloc(&device_outMatrix, SIZE_M  * sizeN * sizeof(short)));
-		cuda_checkStatus(cudaMemcpy(device_inMatrix, a, SIZE_M * sizeN * sizeof(short), cudaMemcpyHostToDevice));
+	cuda_checkStatus(cudaEventCreate(&cuda_startTime));
+	cuda_checkStatus(cudaEventCreate(&cuda_endTime));
+
+	int numOfBlocksInRow = (int)ceil((double)SIZE_M / COUNT_OF_THREADS);
+	int blocksNeeded = (SIZE_N * numOfBlocksInRow) / 2;
+	int maxBlocksPerIteration = MAX_BLOCKS - MAX_BLOCKS % numOfBlocksInRow;
+
+	for (int i = 0, int times = 0; i < blocksNeeded; i += maxBlocksPerIteration, times++) {
+		int blocksInIteration = (blocksNeeded - i) < maxBlocksPerIteration ? blocksNeeded - i : maxBlocksPerIteration;
+
+		int numOfRows =  (blocksInIteration / numOfBlocksInRow) * 2;
+
+		cuda_checkStatus(cudaMalloc(&device_inMatrix, SIZE_M * numOfRows * sizeof(short)));
+		cuda_checkStatus(cudaMalloc(&device_outMatrix, SIZE_M  * numOfRows * sizeof(short)));
+		cuda_checkStatus(cudaMemcpy(
+			device_inMatrix, 
+			&inMatrix[SIZE_M * (maxBlocksPerIteration / numOfBlocksInRow) * 2 * times],
+			SIZE_M * numOfRows * sizeof(short), cudaMemcpyHostToDevice)
+		);
 
 		dim3 blockSize(COUNT_OF_THREADS);
-		dim3 gridSize(sizeN / 2);
+		dim3 gridSize(blocksInIteration);
+
+		cuda_checkStatus(cudaEventRecord(cuda_startTime, NULL));
 
 		if (optimizationFlag) {
-			cuda_checkStatus(cudaEventRecord(cuda_startTime, NULL));
-			cuda_matrixOptimizationOperationKernel << < gridSize, blockSize >> > (device_inMatrix, device_outMatrix);
-			cuda_checkStatus(cudaPeekAtLastError());
-			cuda_checkStatus(cudaDeviceSynchronize());
-			cuda_checkStatus(cudaEventRecord(cuda_endTime, NULL));
-			cuda_checkStatus(cudaEventSynchronize(cuda_endTime));
+			cuda_matrixSharedMemoryOperationKernel <<< gridSize, blockSize >>> ((int*)device_inMatrix, (int*)device_outMatrix, numOfBlocksInRow);
 		}
 		else {
-			cuda_checkStatus(cudaEventRecord(cuda_startTime, NULL));
-			cuda_matrixOperationKernel << < gridSize, blockSize >> > (device_inMatrix, device_outMatrix);
-			cuda_checkStatus(cudaPeekAtLastError());
-			cuda_checkStatus(cudaDeviceSynchronize());
-			cuda_checkStatus(cudaEventRecord(cuda_endTime, NULL));
-			cuda_checkStatus(cudaEventSynchronize(cuda_endTime));
+			cuda_matrixOperationKernel <<< gridSize, blockSize >>> ((int*)device_inMatrix, device_outMatrix, numOfBlocksInRow);
 		}
+
+		cuda_checkStatus(cudaPeekAtLastError());
+		cuda_checkStatus(cudaEventRecord(cuda_endTime, NULL));
+		cuda_checkStatus(cudaEventSynchronize(cuda_endTime));
 
 		cuda_checkStatus(cudaEventElapsedTime(&resultTime, cuda_startTime, cuda_endTime));
 
@@ -190,7 +227,11 @@ void cuda_matrixOperation(short* inMatrix, short* outMatrix, bool optimizationFl
 			printf("%d: CUDA time: %lf seconds\n", times, (double)resultTime / CLOCKS_PER_SEC);
 		}
 
-		cuda_checkStatus(cudaMemcpy(&outMatrix[i * 1024], device_outMatrix, SIZE_M * sizeN * sizeof(short), cudaMemcpyDeviceToHost));
+		cuda_checkStatus(cudaMemcpy(
+			&outMatrix[SIZE_M * (maxBlocksPerIteration / numOfBlocksInRow) * 2 * times],
+			device_outMatrix,
+			SIZE_M * numOfRows * sizeof(short), cudaMemcpyDeviceToHost)
+		);
 
 		cuda_checkStatus(cudaFree(device_inMatrix));
 		cuda_checkStatus(cudaFree(device_outMatrix));
@@ -210,21 +251,11 @@ void cpu_matrixOperation(short* inMatrix, short* outMatrix, int sizeOfM, int siz
 	printf("CPU time: %lf seconds\n", (double)(endTime - startTime) / CLOCKS_PER_SEC);
 }
 
-
 void fillMatrix(short* matrix, int sizeOfM, int sizeOfN) {
 	for (int i = 0; i < sizeOfN; i++) {
 		for (int j = 0; j < sizeOfM; j++) {
 			matrix[sizeOfM * i + j] = rand() % 20 + 1;
 		}
-	}
-}
-
-int getCountOfBlocks(int sizeOfM, int sizeOfN, int countOfThreads) {
-	if (sizeOfM * sizeOfN % countOfThreads == 0) {
-		return sizeOfM * sizeOfN / countOfThreads;
-	}
-	else {
-		return (sizeOfM * sizeOfN / countOfThreads) + 1;
 	}
 }
 
