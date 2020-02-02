@@ -3,6 +3,7 @@
 #include <time.h>
 #include <emmintrin.h>
 #include <iostream>
+using namespace std;
 
 template <typename T>
 class Matrix
@@ -62,21 +63,22 @@ public:
 	}
 
 	Matrix<T> multiplyVectorized(Matrix<T> &matrixB) {
-		if (this->mainMatrixHeight != matrixB.getMainMatrixWidth()
-			|| this->cellMatrixHeight != matrixB.getCellMatrixWidth())
+		if (this->mainMatrixWidth != matrixB.getMainMatrixHeight()
+			|| this->cellMatrixWidth != matrixB.getCellMatrixHeight())
 		{
 			return matrixB;
 		}
 
-		Matrix<T> resultMatrix(this->mainMatrixWidth, matrixB.getMainMatrixHeight(), this->cellMatrixWidth, matrixB.getCellMatrixHeight());
+		Matrix<T> resultMatrix(this->mainMatrixHeight, matrixB.getMainMatrixWidth(), this->cellMatrixHeight, matrixB.getCellMatrixWidth());
 
-		for (int m = 0; m < matrixB.getMainMatrixHeight(); m++) {
+		for (int m = 0; m < this->mainMatrixHeight; m++) {
 			for (int n = 0; n < this->mainMatrixWidth; n++) {
-				for (int y = 0; y < this->mainMatrixWidth; y++) {
+				for (int y = 0; y < matrixB.getMainMatrixWidth(); y++) {
 					mulMatrixVectorized(matrixB, resultMatrix, m, n, y);
 				}
 			}
 		}
+
 		return resultMatrix;
 	}
 
@@ -85,11 +87,12 @@ public:
 		T* __restrict resultMatrixCellRow = nullptr;
 		T* __restrict matrixBCellRow = nullptr;
 
-		for (int i = 0; i < matrixB.getCellMatrixHeight(); i++) {
+		for (int i = 0; i < this->cellMatrixHeight; i++) {
 			resultMatrixCellRow = resultMatrix.getMatrixPointer()[m][n][i];
 			for (int j = 0; j < this->cellMatrixWidth; j++) {
 				matrixBCellRow = matrixB.getMatrixPointer()[m][y][j];
-				for (int k = 0; k < this->cellMatrixWidth; k++) {
+#pragma loop(hint_parallel(0))
+				for (int k = 0; k < matrixB.getCellMatrixWidth(); k++) {
 					resultMatrixCellRow[k] += this->matrixPointer[m][n][i][j] * matrixBCellRow[k];
 				}
 			}
@@ -97,21 +100,22 @@ public:
 	}
 
 	Matrix<T> multiplyNotVectorized(Matrix<T> &matrixB) {
-		if (this->mainMatrixHeight != matrixB.getMainMatrixWidth()
-			|| this->cellMatrixHeight != matrixB.getCellMatrixWidth())
+		if (this->mainMatrixWidth != matrixB.getMainMatrixHeight()
+			|| this->cellMatrixWidth != matrixB.getCellMatrixHeight())
 		{
 			return matrixB;
 		}
 
-		Matrix<T> resultMatrix(this->mainMatrixWidth, matrixB.getMainMatrixHeight(), this->cellMatrixWidth, matrixB.getCellMatrixHeight());
+		Matrix<T> resultMatrix(this->mainMatrixHeight, matrixB.getMainMatrixWidth(), this->cellMatrixHeight, matrixB.getCellMatrixWidth());
 
-		for (int m = 0; m < matrixB.getMainMatrixHeight(); m++) {
+		for (int m = 0; m < this->mainMatrixHeight; m++) {
 			for (int n = 0; n < this->mainMatrixWidth; n++) {
-				for (int y = 0; y < this->mainMatrixWidth; y++) {
+				for (int y = 0; y < matrixB.getMainMatrixWidth(); y++) {
 					mulMatrixNotVectorized(matrixB, resultMatrix, m, n, y);
 				}
 			}
 		}
+
 		return resultMatrix;
 	}
 
@@ -120,12 +124,12 @@ public:
 		T* __restrict resultMatrixCellRow = nullptr;
 		T* __restrict matrixBCellRow = nullptr;
 
-		for (int i = 0; i < matrixB.getCellMatrixHeight(); i++) {
+		for (int i = 0; i < this->cellMatrixHeight; i++) {
 			resultMatrixCellRow = resultMatrix.getMatrixPointer()[m][n][i];
 			for (int j = 0; j < this->cellMatrixWidth; j++) {
 				matrixBCellRow = matrixB.getMatrixPointer()[m][y][j];
-#pragma loop(no_vector) 
-				for (int k = 0; k < this->cellMatrixWidth; k++) {
+#pragma loop(no_vector)
+				for (int k = 0; k < matrixB.getCellMatrixWidth(); k++) {
 					resultMatrixCellRow[k] += this->matrixPointer[m][n][i][j] * matrixBCellRow[k];
 				}
 			}
@@ -133,11 +137,17 @@ public:
 	}
 
 	Matrix<T> multiplySse(Matrix<T> &matrixB) {
-		Matrix<T> resultMatrix(this->mainMatrixWidth, matrixB.getMainMatrixHeight(), this->cellMatrixWidth, matrixB.getCellMatrixHeight());
+		if (this->mainMatrixWidth != matrixB.getMainMatrixHeight()
+			|| this->cellMatrixWidth != matrixB.getCellMatrixHeight())
+		{
+			return matrixB;
+		}
 
-		for (int m = 0; m < matrixB.getMainMatrixHeight(); m++) {
+		Matrix<T> resultMatrix(this->mainMatrixHeight, matrixB.getMainMatrixWidth(), this->cellMatrixHeight, matrixB.getCellMatrixWidth());
+
+		for (int m = 0; m < this->mainMatrixHeight; m++) {
 			for (int n = 0; n < this->mainMatrixWidth; n++) {
-				for (int y = 0; y < this->mainMatrixWidth; y++) {
+				for (int y = 0; y < matrixB.getMainMatrixWidth(); y++) {
 					mulSse(matrixB, resultMatrix, m, n, y);
 				}
 			}
@@ -155,14 +165,14 @@ public:
 		__m128 valueFromMatrixA;
 		__m128 matrixBRowReg;
 
-		for (int i = 0; i < matrixB.getCellMatrixHeight(); i++)
+		for (int i = 0; i < this->cellMatrixHeight; i++)
 		{
 			resultMatrixCellRow = resultMatrix.getMatrixPointer()[m][n][i];
 			for (int j = 0; j < this->cellMatrixWidth; j++)
 			{
 				matrixBCellRow = matrixB.getMatrixPointer()[m][y][j];
 				valueFromMatrixA = _mm_set1_ps(this->matrixPointer[m][n][i][j]);
-				for (int k = 0; k < this->cellMatrixWidth; k += 4)
+				for (int k = 0; k < matrixB.getCellMatrixWidth(); k += 4)
 				{
 					resultMatrixReg = _mm_load_ps(resultMatrixCellRow + k);
 					matrixBRowReg = _mm_load_ps(matrixBCellRow + k);
@@ -181,7 +191,7 @@ public:
 				for (int j = 0; j < mainMatrixWidth; j++) {
 					for (int k = 0; k < cellMatrixHeight; k++) {
 						for (int m = 0; m < cellMatrixWidth; m++) {
-							matrixPointer[i][j][k][m] = (T)(rand() % 100);
+							matrixPointer[i][j][k][m] = (T)(rand() % 1000);
 						}
 					}
 				}
