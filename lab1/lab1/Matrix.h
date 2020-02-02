@@ -70,7 +70,7 @@ public:
 		}
 
 		Matrix<T> resultMatrix(this->mainMatrixHeight, matrixB.getMainMatrixWidth(), this->cellMatrixHeight, matrixB.getCellMatrixWidth());
-
+		
 		for (int m = 0; m < this->mainMatrixHeight; m++) {
 			for (int n = 0; n < this->mainMatrixWidth; n++) {
 				for (int y = 0; y < matrixB.getMainMatrixWidth(); y++) {
