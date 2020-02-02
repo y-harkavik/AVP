@@ -5,17 +5,17 @@ using namespace std;
 
 typedef float TYPE;
 
-#define MAIN_WIDTH 200
-#define MAIN_HEIGHT 200
+#define MAIN_WIDTH 2000
+#define MAIN_HEIGHT 2000
 #define MATRIX_A_CELL_WIDTH 8
-#define MATRIX_A_CELL_HEIGHT 12
-#define MATRIX_B_CELL_WIDTH 12
+#define MATRIX_A_CELL_HEIGHT 4
+#define MATRIX_B_CELL_WIDTH 4
 #define MATRIX_B_CELL_HEIGHT 8
 
 int main() {
 	Matrix<TYPE> matrixA(MAIN_WIDTH, MAIN_HEIGHT, MATRIX_A_CELL_WIDTH, MATRIX_A_CELL_HEIGHT),
 		matrixB(MAIN_WIDTH, MAIN_HEIGHT, MATRIX_B_CELL_WIDTH, MATRIX_B_CELL_HEIGHT),
-		matrixC, matrixD;
+		matrixC, matrixD, matrixF;
 
 	matrixA.generateValues();
 	matrixB.generateValues();
@@ -44,18 +44,18 @@ int main() {
 
 	resultTimeSse = endTime - startTime;
 
-	cout << "Victorization Ticks: " << resultTime << "." << endl;
+	cout << "Vectorization Ticks: " << resultTime << "." << endl;
 	cout << "SSE Ticks: " << resultTimeSse << "." << endl;
-	cout << "Not Victorized Ticks: " << resultTimeNotVectorized << "." << endl << endl;
+	cout << "Not Vectorized Ticks: " << resultTimeNotVectorized << "." << endl << endl;
 
 	cout << "Vectorized speed up: x" << (double)resultTimeNotVectorized / (double)resultTime << "." << endl;
 	cout << "SSE speed up: x" << (double)resultTimeNotVectorized / (double)resultTimeSse << ".\n" << endl;
 
 	if (matrixC.equals(matrixD)) {
-		cout << "Matrices by SSE and by Victorization are equal." << endl;
+		cout << "Matrices by SSE and by Vectorization are equal." << endl;
 	}
 	else {
-		cout << "Matrices by SSE and by Victorization are not equal." << endl;
+		cout << "Matrices by SSE and by Vectorization are not equal." << endl;
 	}
 
 	system("pause");
